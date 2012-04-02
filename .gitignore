@@ -1,3 +1,5 @@
 *.mobileprovision
 Gemfile.lock
 *.swp
+*.config
+data/
