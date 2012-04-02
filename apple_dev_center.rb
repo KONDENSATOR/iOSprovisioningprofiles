@@ -7,7 +7,7 @@ require 'yaml'
 require 'encrypted_strings'
 
 INSTALL_DIR = File.dirname($0)
-USAGE =  "Usage: #{File.basename($0)} [-d [DIR]] [-u login] [-p password] [-O file] [-C config][-S secret_key] [-n] [-h]"
+USAGE =  "Usage: #{File.basename($0)} [-d [DIR]] [-u login] [-p password] [-T team] [-O file] [-C config][-S secret_key] [-n] [-h]"
 
 class Profile
   attr_accessor :uuid, :blobId, :type, :name, :appid, :statusXcode, :downloadUrl
@@ -66,7 +66,6 @@ def parse_config(options)
   encrypted = account['password']
   decrypted = encrypted.decrypt(:symmetric, :password => secret_key)
   options[:passwd] = decrypted
-  puts options.inspect
 end
 
 def parse_command_line(args)
@@ -84,6 +83,9 @@ def parse_command_line(args)
     end
     opts.on( '-n', '--name', 'use the profile name instead of its UUID as basename when saving them') do
       options[:profileFileName] = :name
+    end
+    opts.on( '-T', '--team TEAMID', 'the identifier for the team that you are wanting to query') do |team|
+      options[:team] = team.nil? ? "" : team
     end
     opts.on( '-d', '--dump [DIR]', 'dumps the site content as JSON format (to the optional specified directory, that will be created if non existent)') do |dir|
       options[:dump] = true
@@ -145,14 +147,30 @@ class AppleDeveloperCenter
     # Log in to Apple Developer portal if we're presented with a login form
     form = page.form_with :name => 'appleConnectForm'
     if form
-      puts 'login: ' + options[:login]
-      puts 'passwd: ' + options[:passwd]
       form.theAccountName = options[:login]
       form.theAccountPW = options[:passwd]
       form.submit
+      page = select_team(url, options)
+    end
+    page
+  end
+
+  def select_team(url, options) 
+    page = @agent.get(url)
+    form = page.form_with :name => 'saveTeamSelection'
+    if form 
+      teams_selector = form.field_with :name => 'memberDisplayId' 
+      teams_selector.options.each { |option|
+        if option.to_s == options[:team]  
+          teams_selector.value = options[:team]
+          puts 'Selected Team: ' + options[:team]
+          break
+        end 
+      }
+      continueButton = form.button_with :value => 'Continue' 
+      form.click_button(continueButton)
       page = @agent.get(url)
     end
-    puts page.inspect
     page
   end
 
