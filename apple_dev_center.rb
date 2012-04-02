@@ -56,16 +56,17 @@ end
 
 def parse_config(options)
   config = YAML::load_file(options[:configFile])
-  
   login_to_fetch = options[:login]
   if login_to_fetch.nil? 
     login_to_fetch = config['default']
+    options[:login] = login_to_fetch 
   end
   account = config['accounts'].select { |a| a['login'] == login_to_fetch }[0]
   secret_key = options[:secretKey].nil? ? "" : options[:secretKey]
   encrypted = account['password']
   decrypted = encrypted.decrypt(:symmetric, :password => secret_key)
   options[:passwd] = decrypted
+  puts options.inspect
 end
 
 def parse_command_line(args)
@@ -144,11 +145,14 @@ class AppleDeveloperCenter
     # Log in to Apple Developer portal if we're presented with a login form
     form = page.form_with :name => 'appleConnectForm'
     if form
+      puts 'login: ' + options[:login]
+      puts 'passwd: ' + options[:passwd]
       form.theAccountName = options[:login]
       form.theAccountPW = options[:passwd]
       form.submit
       page = @agent.get(url)
     end
+    puts page.inspect
     page
   end
 
