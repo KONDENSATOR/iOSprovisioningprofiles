@@ -17,9 +17,9 @@ class Profile
       'type' => type,
       'name' => name,
       'appid' => appid,
-      'statusXcode' => statusXcode
-#      'blobId' => blobId,      
-#      'downloadUrl' => downloadUrl,
+      'statusXcode' => statusXcode,
+      'blobId' => blobId,      
+      'downloadUrl' => downloadUrl
     }.to_json(*a)
   end
 end
@@ -33,8 +33,8 @@ class Certificate
       'name' => name,
       'exp_date' => exp_date,
       'status' => status,
-      'profile' => profile
-#      'downloadUrl' => downloadUrl,
+      'profile' => profile,
+      'downloadUrl' => downloadUrl
     }.to_json(*a)
   end
 end
@@ -103,6 +103,24 @@ def parse_command_line(args)
     opts.on( '-O', '--output FILE', 'writes output to the specified file. Uses standard output otherwise') do |output|
       options[:output] = output
     end
+    
+    opts.on( '', '--device-uuid UUID', 'UUID to use for adding a device') do |output|
+      options[:device_uuid] = output
+    end
+    
+    opts.on( '', '--device-name DEVICE_NAME', 'Device Name') do |output|
+      options[:device_name] = output
+    end
+    
+    opts.on( '', '--add-device', 'Adds a device to the provisioning portal') do |output|
+        options[:add_device] = true
+    end
+    
+    opts.on( '', '--profile-name NAME', 'The name of the profile you wanna add interact with') do |output|
+      options[:profile_name] = output
+    end
+    
+    
     opts.on( '-h', '--help', 'Display this screen' ) do
       puts opts
       exit
@@ -135,6 +153,9 @@ class AppleDeveloperCenter
     @certificateUrls[:distribution] = "https://developer.apple.com/ios/manage/certificates/team/distribute.action"
 
     @devicesUrl = "https://developer.apple.com/ios/manage/devices/index.action"
+    @deviceAddUrl = "https://developer.apple.com/ios/manage/devices/add.action"
+    @editProfileUrl = "https://developer.apple.com/ios/manage/provisioningprofiles/edit.action?provDisplayId="
+    
   end
   
   def load_page_or_login(url, options)
@@ -144,6 +165,7 @@ class AppleDeveloperCenter
     # Log in to Apple Developer portal if we're presented with a login form
     form = page.form_with :name => 'appleConnectForm'
     if form
+      info("Found login page, logging in now")
       form.theAccountName = options[:login]
       form.theAccountPW = options[:passwd]
       form.submit
@@ -256,6 +278,36 @@ class AppleDeveloperCenter
     end
     devices
   end
+  
+  def add_device_uuid(device_name,device_uuid,options)
+    info("Fetching add device page")
+    page = load_page_or_login(@deviceAddUrl, options)
+    # Log in to Apple Developer portal if we're presented with a login form
+    form = page.form_with :name => 'add'
+    if form
+      info("Found add device form. Adding device")
+      form['deviceNameList[0]'] = device_name
+      form['deviceNumberList[0]'] = device_uuid
+    end
+    
+    #TODO: Check device added successuflly 
+    info("Device added successfully")
+  end
+  
+  def update_provisioning_profile(profile_name,options)
+    profiles = read_all_profiles(options)
+    profile = profiles.select {|p| p.name == profile_name}.first
+    if profile
+      page = load_page_or_login(@editProfileUrl + profile.blobId,options)
+      form = page.form_with :name => 'save'
+      if form
+        form.checkboxes_with(:name => 'selectedDevices').each{|box|box.check}
+        form.submit
+        info("Submitting form with form data")
+      end
+      #TODO: Check success state of the form
+    end
+  end
 
   def fetch_site_data(options)
     site = {}
@@ -272,7 +324,7 @@ class AppleDeveloperCenter
   # return the uuid of the specified mobile provisioning file
   def pp_uuid(ppfile)
     # FIXME extract script into a reusable ruby library    
-    uuid = `#{INSTALL_DIR}/mobileprovisioning.rb #{ppfile} -d UUID`
+    uuid = `bundle exec ruby #{INSTALL_DIR}/mobileprovisioning.rb #{ppfile} -d UUID`
     # strip trailing \n
     uuid = uuid[0..-2]
     uuid
@@ -288,7 +340,7 @@ class AppleDeveloperCenter
       if profileFileName == :uuid
         basename = p.uuid
       else
-        basename = p.name
+        basename = p.name.gsub(/ /, '_').gsub(/'/, '')
       end
       newfilename = "#{dumpDir}/#{basename}.mobileprovision"
       File.rename(filename, "#{newfilename}")
@@ -313,6 +365,14 @@ def dumpSite(options)
   dump(text, options[:output])
 end
 
+def addDeviceUUID(options)
+  @ADC = AppleDeveloperCenter.new()
+  #site = @ADC.add_device_uuid(options[:device_name],options[:device_uuid],options)
+  if options[:profile_name]
+    @ADC.update_provisioning_profile(options[:profile_name],options)
+  end
+end
+
 def main()
   begin
     options = parse_command_line(ARGV)
@@ -324,6 +384,9 @@ def main()
 
   if (options[:dump])
     dumpSite(options)
+  end
+  if (options[:add_device])
+    addDeviceUUID(options)
   end
   
 end
